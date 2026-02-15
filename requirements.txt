@@ -1,0 +1,14 @@
+fastapi
+uvicorn[standard]
+insightface
+onnxruntime
+numpy
+opencv-python
+faiss-cpu
+hdbscan
+streamlit
+Pillow
+tokenizers
+requests
+watchdog
+pydantic

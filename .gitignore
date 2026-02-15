@@ -1,0 +1,59 @@
+gallery.html
+test_images/
+
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDEs
+.spyderproject
+.spyproject
+.ropeproject
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+
+# OS
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Project specific
+models/embeddings.npy
+models/image_vectors.npy
+models/faiss_index.bin*
+models/image_cache.json
+models/paths.json
+models/people_db.json
+image_dataset/
