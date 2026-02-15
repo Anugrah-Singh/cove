@@ -9,17 +9,17 @@ import numpy as np
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # Patch the engines BEFORE importing server to avoid startup load
-with patch('server.AIEngine'), \
-     patch('server.SearchEngine'), \
-     patch('server.VectorStorage'):
-    from server import app, startup_event
+with patch('server.AIEnginePool'), \
+    patch('server.SearchEngine'), \
+    patch('server.VectorStorage'):
+    from server import app
 
 client = TestClient(app)
 
 @pytest.fixture
 def mock_engines():
     """Mocks the global engines in server.py"""
-    with patch('server.ai_engine') as mock_ai, \
+    with patch('server.ai_pool') as mock_pool, \
          patch('server.search_engine') as mock_search, \
          patch('server.storage') as mock_storage, \
          patch('server.search_storage') as mock_search_storage:
@@ -29,7 +29,9 @@ def mock_engines():
         mock_face.bbox = [0, 0, 100, 100]
         # Create a valid embedding
         mock_face.embedding = np.random.rand(512).astype('float32')
-        mock_ai.get_faces.return_value = [mock_face]
+        mock_engine = MagicMock()
+        mock_engine.get_faces.return_value = [mock_face]
+        mock_pool.borrow.return_value.__enter__.return_value = mock_engine
         
         # Configure Search Engine Mock
         mock_search.get_text_embedding.return_value = np.random.rand(512).astype('float32')
@@ -39,11 +41,11 @@ def mock_engines():
             {"path": "test_images/test.jpg", "score": 0.95}
         ]
         
-        yield mock_ai, mock_search, mock_storage, mock_search_storage
+        yield mock_engine, mock_search, mock_storage, mock_search_storage
 
 def test_startup():
     """Test that startup event initializes engines (mocked)"""
-    with patch('server.AIEngine') as MockAI, \
+    with patch('server.AIEnginePool') as MockAI, \
          patch('server.SearchEngine') as MockSearch, \
          patch('server.VectorStorage') as MockStorage:
         
@@ -69,7 +71,7 @@ def test_search_endpoint(mock_engines):
 @patch("os.path.exists")
 def test_index_image_endpoint(mock_exists, mock_imread, mock_engines):
     """Test /index/image endpoint"""
-    mock_ai, _, mock_storage, _ = mock_engines
+    mock_engine, _, mock_storage, _ = mock_engines
     
     # Setup FS mocks
     mock_exists.return_value = True
@@ -83,7 +85,7 @@ def test_index_image_endpoint(mock_exists, mock_imread, mock_engines):
     assert data["status"] == "indexed"
     
     # Verify we called the engine and storage
-    mock_ai.get_faces.assert_called_once()
+    mock_engine.get_faces.assert_called_once()
     mock_storage.add.assert_called_once()
     mock_storage.save.assert_called_once()
 

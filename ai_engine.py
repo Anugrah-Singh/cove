@@ -1,52 +1,63 @@
-import os
-import insightface
-from insightface.app import FaceAnalysis
-import warnings
-import onnxruntime
+import queue
+import threading
+from contextlib import contextmanager
 
-# Suppress warnings for cleaner output
-warnings.filterwarnings("ignore")
+from insightface.app import FaceAnalysis
+
+from vision_config import CONFIG, VisionConfig, get_logger
+
+logger = get_logger(__name__)
+
 
 class AIEngine:
-    def __init__(self, model_name="buffalo_s", root_path="."):
-        # Determine available providers
-        # available_providers = onnxruntime.get_available_providers()
-        # print(f"[INFO] Available ONNX Providers: {available_providers}")
-        
-        # Force CPU for stability during testing given CUDA 999 errors
-        target_providers = ['CPUExecutionProvider']
-        print("[INFO] Forcing CPU Execution for Stability")
+    def __init__(self, instance_id: int = 0, config: VisionConfig = CONFIG):
+        self.instance_id = instance_id
+        self.config = config
+        self._lock = threading.Lock()
 
-        # 1. Initialize
+        logger.info("Booting AI engine %s (providers=%s)", instance_id, self.config.providers)
         self.app = FaceAnalysis(
-            name=model_name, 
-            root=root_path, 
-            allowed_modules=['detection', 'recognition'], 
-            providers=target_providers
+            name="buffalo_s",
+            root=self.config.model_dir,
+            allowed_modules=["detection", "recognition"],
+            providers=self.config.providers,
         )
-        
-        # 2. Speed Settings (320x320 is the sweet spot for 200+ FPS)
-        # ctx_id=0 for GPU 0, -1 for CPU
-        ctx_id = -1
-        self.app.prepare(ctx_id=ctx_id, det_size=(320, 320))
-        
-        # 3. FORCE HEURISTIC SEARCH (The "Instant Start" Fix) - ONE TIME CONFIG
-        if ctx_id == 0:
-            sess_options = {
-                'device_id': 0,
-                'gpu_mem_limit': 4 * 1024 * 1024 * 1024,
-                'arena_extend_strategy': 'kNextPowerOfTwo',
-                'cudnn_conv_algo_search': 'HEURISTIC', # <--- CRITICAL FIX
-                'do_copy_in_default_stream': '1',
-            }
-            
-            try:
-                for model in self.app.models.values():
-                    if hasattr(model, 'session'):
-                        model.session.set_providers(['CUDAExecutionProvider'], [sess_options])
-            except Exception as e:
-                print(f"[WARNING] Failed to set advanced CUDA options: {e}")
-                print("[WARNING] Falling back to default provider settings.")
+        self.app.prepare(ctx_id=self.config.ctx_id, det_size=self.config.det_size)
+
+        if self.config.use_gpu:
+            self._apply_gpu_options()
+
+    def _apply_gpu_options(self):
+        try:
+            for model in self.app.models.values():
+                if hasattr(model, "session") and model.session is not None:
+                    model.session.set_providers(["CUDAExecutionProvider"], [self.config.session_options])
+        except Exception as exc:
+            logger.warning("Failed to set GPU session options: %s", exc)
 
     def get_faces(self, img):
-        return self.app.get(img)
+        with self._lock:
+            try:
+                return self.app.get(img)
+            except Exception as exc:
+                logger.exception("Face analysis failed: %s", exc)
+                return []
+
+
+class AIEnginePool:
+    def __init__(self, pool_size: int = None, config: VisionConfig = CONFIG):
+        self.config = config
+        self.pool_size = pool_size or self.config.effective_workers
+        self._queue = queue.Queue()
+
+        for idx in range(self.pool_size):
+            engine = AIEngine(idx, config=self.config)
+            self._queue.put(engine)
+
+    @contextmanager
+    def borrow(self):
+        engine = self._queue.get()
+        try:
+            yield engine
+        finally:
+            self._queue.put(engine)

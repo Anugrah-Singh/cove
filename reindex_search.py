@@ -4,16 +4,17 @@ import json
 import time
 from search_engine import SearchEngine
 from vector_storage import VectorStorage
+from vision_config import CONFIG
 
 def main():
     print("🧠 SEMANTIC RE-INDEXING (Teaching AI to 'Read' your photos)...")
     
     # 1. Load the file list we already found
-    if not os.path.exists("models/paths.json"):
-        print("❌ 'models/paths.json' missing. Run production_pipeline.py first.")
+    if not os.path.exists(CONFIG.paths_file):
+        print(f"❌ '{CONFIG.paths_file}' missing. Run production_pipeline.py first.")
         return
         
-    with open("models/paths.json", "r") as f:
+    with open(CONFIG.paths_file, "r") as f:
         paths = json.load(f)
         
     print(f"   -> Found {len(paths)} images to index.")
@@ -23,7 +24,7 @@ def main():
     
     # 3. Build a SEPARATE FAISS index for CLIP semantic search
     #    This is distinct from faiss_index.bin which holds face embeddings.
-    search_storage = VectorStorage(index_path="models/faiss_search_index.bin")
+    search_storage = VectorStorage(index_path=CONFIG.search_index_path, vector_path=CONFIG.vector_path)
     
     clip_vectors = []
     valid_paths = []
@@ -52,7 +53,7 @@ def main():
         vectors = np.array(clip_vectors, dtype="float32")
         search_storage.add(vectors, valid_paths)
         search_storage.save()
-        print("💾 Saved semantic search index to 'models/faiss_search_index.bin'.")
+        print(f"💾 Saved semantic search index to '{CONFIG.search_index_path}'.")
     
     print("🚀 Semantic Search is now ready. Restart Streamlit to test.")
 

@@ -12,3 +12,5 @@ tokenizers
 requests
 watchdog
 pydantic
+pytest
+httpx

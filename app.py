@@ -6,6 +6,7 @@ from search_engine import SearchEngine
 from vector_storage import VectorStorage
 from person_manager import PersonManager
 from PIL import Image
+from vision_config import CONFIG
 
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Vision Archive AI", layout="wide", page_icon="👁️")
@@ -29,8 +30,8 @@ def load_search_engine():
 
 @st.cache_resource
 def load_data():
-    storage = VectorStorage()  # Face embeddings (faiss_index.bin)
-    search_storage = VectorStorage(index_path="models/faiss_search_index.bin")  # CLIP semantic search
+    storage = VectorStorage(index_path=CONFIG.faiss_index_path)  # Face embeddings
+    search_storage = VectorStorage(index_path=CONFIG.search_index_path, vector_path=CONFIG.vector_path)  # CLIP semantic search
     pm = PersonManager()
     return storage, search_storage, pm
 
@@ -40,6 +41,9 @@ storage, search_storage, pm = load_data()
 if not pm.people:
     st.error("❌ Person Database missing! Run 'python tune_clustering.py' first.")
     st.stop()
+
+if search_storage.vector_matrix is None:
+    st.warning("Semantic index missing vector cache. Run 'python reindex_search.py' to populate models/image_vectors.npy")
 
 # --- SIDEBAR ---
 st.sidebar.title("👁️ Vision Archive")
@@ -126,21 +130,15 @@ elif mode == "Detective Mode":
         # all_scores = np.dot(storage.vectors, text_vec) # REMOVED (No direct vector access)
         
         # Build path map from CLIP search index (semantic vectors)
-        path_map = {p: i for i, p in enumerate(search_storage.paths)}
-
         # C. INTERSECTION
         final_results = []
         for path in candidate_paths:
             # We need the CLIP vector index for this specific file
-            if path in path_map:
-                idx = path_map[path]
-                try:
-                    # Retrieve CLIP vector from search FAISS index
-                    vec = search_storage.index.reconstruct(idx)
-                    score = np.dot(vec, text_vec)
-                    final_results.append((path, score))
-                except Exception:
-                    pass
+            vec = search_storage.get_vector_by_path(path)
+            if vec is None:
+                continue
+            score = float(np.dot(vec, text_vec))
+            final_results.append((path, score))
         
         # D. Sort by Relevance
         final_results.sort(key=lambda x: x[1], reverse=True)
