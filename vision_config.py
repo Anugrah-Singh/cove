@@ -42,6 +42,9 @@ class VisionConfig:
     def __init__(self):
         self.model_dir = os.getenv("VISION_MODEL_DIR", "models")
         self.log_level = os.getenv("VISION_LOG_LEVEL", "INFO").upper()
+        self.log_dir = os.getenv("VISION_LOG_DIR", "logs")
+        self.log_file = os.path.join(self.log_dir, os.getenv("VISION_LOG_FILE", "vision_archive.log"))
+        self.api_key = os.getenv("VISION_API_KEY")
         self.det_size = _parse_tuple(os.getenv("VISION_DET_SIZE", "320,320"), (320, 320))
         self._use_gpu_override = os.getenv("VISION_USE_GPU", "auto")
         self._force_cpu = _parse_bool(os.getenv("VISION_FORCE_CPU", None), False)
@@ -98,10 +101,21 @@ CONFIG = VisionConfig()
 
 
 def setup_logging():
+    if logging.getLogger().handlers:
+        return
+
     level = CONFIG.log_level
+    os.makedirs(CONFIG.log_dir, exist_ok=True)
+    handlers = [logging.StreamHandler()]
+    try:
+        handlers.append(logging.FileHandler(CONFIG.log_file, encoding="utf-8"))
+    except OSError:
+        pass
+
     logging.basicConfig(
         level=getattr(logging, level, logging.INFO),
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        handlers=handlers,
     )
 
 
