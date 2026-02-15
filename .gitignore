@@ -53,9 +53,11 @@ dmypy.json
 models/embeddings.npy
 models/image_vectors.npy
 models/faiss_index.bin*
+models/faiss_search_index.bin
 models/image_cache.json
 models/paths.json
 models/people_db.json
 models/clip_*.onnx
 models/buffalo_s/*.onnx
+logs/*.log
 image_dataset/
