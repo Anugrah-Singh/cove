@@ -56,4 +56,6 @@ models/faiss_index.bin*
 models/image_cache.json
 models/paths.json
 models/people_db.json
+models/clip_*.onnx
+models/buffalo_s/*.onnx
 image_dataset/
