@@ -1,6 +1,8 @@
 import os
 import requests
 
+from vision_config import CONFIG
+
 # Define the files we need (Using Xenova's optimized ONNX models)
 # These are standard, lightweight, and don't require PyTorch.
 FILES = {
@@ -9,7 +11,7 @@ FILES = {
     "tokenizer.json":  "https://huggingface.co/Xenova/clip-vit-base-patch32/resolve/main/tokenizer.json"
 }
 
-OUTPUT_DIR = "models"
+OUTPUT_DIR = CONFIG.assets_dir
 
 def download_file(url, filename):
     path = os.path.join(OUTPUT_DIR, filename)
@@ -30,9 +32,8 @@ def download_file(url, filename):
 
 def main():
     # 1. Create models folder if it doesn't exist
-    if not os.path.exists(OUTPUT_DIR):
-        os.makedirs(OUTPUT_DIR)
-        print(f"Created directory: {OUTPUT_DIR}")
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    print(f"Ensured models directory exists: {OUTPUT_DIR}")
 
     # 2. Download all files
     for filename, url in FILES.items():

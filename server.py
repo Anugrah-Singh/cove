@@ -14,8 +14,6 @@ from vision_config import CONFIG, get_logger, setup_logging
 
 setup_logging()
 logger = get_logger(__name__)
-
-ALLOWED_ROOT = os.path.abspath('.')
 ai_pool = None
 search_engine = None
 storage = None
@@ -116,8 +114,6 @@ async def index_image(request: ImageIndexRequest):
         raise HTTPException(status_code=503, detail='Indexer is not ready')
 
     file_path = os.path.abspath(request.file_path)
-    if not file_path.startswith(ALLOWED_ROOT):
-        raise HTTPException(status_code=403, detail='Access denied: path outside allowed directory')
 
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail='File not found')

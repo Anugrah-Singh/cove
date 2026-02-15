@@ -6,6 +6,7 @@ import time
 
 import cv2
 import numpy as np
+from tqdm import tqdm
 
 from ai_engine import AIEnginePool
 from vector_storage import VectorStorage
@@ -18,7 +19,7 @@ IMG_FOLDER = "test_images"
 PATHS_FILE = CONFIG.paths_file
 
 
-def scan_worker(worker_id, file_queue, result_list, lock, pool):
+def scan_worker(worker_id, file_queue, result_list, lock, pool, progress=None, progress_lock=None):
     with pool.borrow() as engine:
         logger.info("Worker %s locked engine", worker_id)
         while True:
@@ -49,6 +50,9 @@ def scan_worker(worker_id, file_queue, result_list, lock, pool):
                 logger.exception("Worker %s failed to process %s: %s", worker_id, path, exc)
             finally:
                 file_queue.task_done()
+                if progress is not None and progress_lock is not None:
+                    with progress_lock:
+                        progress.update(1)
 
 
 def main():
@@ -89,8 +93,15 @@ def main():
     threads = []
     start_time = time.time()
 
+    progress = tqdm(total=len(new_files), desc="Processing images", unit="img")
+    progress_lock = threading.Lock()
+
     for worker_id in range(pool.pool_size):
-        thread = threading.Thread(target=scan_worker, args=(worker_id, file_queue, results, lock, pool), daemon=True)
+        thread = threading.Thread(
+            target=scan_worker,
+            args=(worker_id, file_queue, results, lock, pool, progress, progress_lock),
+            daemon=True,
+        )
         thread.start()
         threads.append(thread)
 
@@ -104,6 +115,11 @@ def main():
             logger.info("Progress %d/%d (%.1f FPS)", done, total, fps)
             last_report = time.time()
         time.sleep(0.5)
+
+    file_queue.join()
+    for thread in threads:
+        thread.join()
+    progress.close()
 
     if results:
         storage = VectorStorage(index_path=CONFIG.faiss_index_path)

@@ -2,8 +2,11 @@ import json
 import os
 import sys
 
+from vision_config import CONFIG
+
+
 def main():
-    db_path = "models/people_db.json"
+    db_path = CONFIG.people_db_path
     
     if len(sys.argv) < 3:
         print("Usage: python rename_person.py <Person_ID> <New Name>")

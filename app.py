@@ -43,7 +43,7 @@ if not pm.people:
     st.stop()
 
 if search_storage.vector_matrix is None:
-    st.warning("Semantic index missing vector cache. Run 'python reindex_search.py' to populate models/image_vectors.npy")
+    st.warning(f"Semantic index missing vector cache. Run 'python reindex_search.py' to populate {CONFIG.vector_path}")
 
 # --- SIDEBAR ---
 st.sidebar.title("👁️ Vision Archive")

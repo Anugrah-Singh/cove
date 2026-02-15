@@ -14,3 +14,4 @@ watchdog
 pydantic
 pytest
 httpx
+tqdm

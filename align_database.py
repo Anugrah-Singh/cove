@@ -2,27 +2,30 @@ import numpy as np
 import json
 import os
 
+from vision_config import CONFIG
+
 def fix_database():
     print("🔧 VISION ARCHIVE: Database Repair Tool")
     
     # 1. Look for vectors (Try both names)
-    if os.path.exists("models/embeddings.npy"):
-        print("   -> Found pipeline output (embeddings.npy)")
-        vectors = np.load("models/embeddings.npy")
-    elif os.path.exists("models/image_vectors.npy"):
-        print("   -> Found existing app database (image_vectors.npy)")
-        vectors = np.load("models/image_vectors.npy")
-    else:
+    vector_candidates = [CONFIG.embeddings_file, CONFIG.vector_path]
+    vectors = None
+    for candidate in vector_candidates:
+        if os.path.exists(candidate):
+            print(f"   -> Found vector file: {candidate}")
+            vectors = np.load(candidate)
+            break
+
+    if vectors is None:
         print("❌ CRITICAL: No vector file found! You must run the pipeline first.")
         return
 
-    # 2. Look for paths (The list of filenames)
-    if os.path.exists("models/paths.json"):
-        print("   -> Found pipeline output (paths.json)")
-        with open("models/paths.json", "r") as f:
+    if os.path.exists(CONFIG.paths_file):
+        print(f"   -> Found paths file: {CONFIG.paths_file}")
+        with open(CONFIG.paths_file, "r") as f:
             paths = json.load(f)
     else:
-        print("❌ CRITICAL: 'models/paths.json' is missing.")
+        print(f"❌ CRITICAL: '{CONFIG.paths_file}' is missing.")
         print("   The app cannot know which photo belongs to which vector.")
         return
 
@@ -40,8 +43,12 @@ def fix_database():
 
     # 5. Save in the Standard Format
     print("💾 Saving standardized database...")
-    np.save("models/image_vectors.npy", vectors)
-    with open("models/image_cache.json", "w") as f:
+    os.makedirs(os.path.dirname(CONFIG.vector_path), exist_ok=True)
+    np.save(CONFIG.vector_path, vectors)
+    cache_dir = os.path.dirname(CONFIG.image_cache)
+    if cache_dir:
+        os.makedirs(cache_dir, exist_ok=True)
+    with open(CONFIG.image_cache, "w") as f:
         json.dump(data_map, f)
 
     print("✅ DONE! You can now run 'streamlit run app.py'")

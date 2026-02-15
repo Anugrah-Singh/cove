@@ -11,7 +11,7 @@ logger = get_logger(__name__)
 
 
 class VectorStorage:
-    def __init__(self, dimension: int = 512, index_path: str = CONFIG.faiss_index_path, vector_path: str = None):
+    def __init__(self, dimension: int = 512, index_path: str = CONFIG.faiss_index_path, vector_path: str = CONFIG.vector_path):
         self.dimension = dimension
         self.index_path = index_path
         self.vector_path = vector_path
@@ -70,11 +70,53 @@ class VectorStorage:
 
     def _save_paths(self):
         paths_file = f"{self.index_path}.paths"
+        self._atomic_json_dump(paths_file, self.paths)
+
+    def _ensure_dir(self, target_path: str) -> None:
+        directory = os.path.dirname(target_path)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
+
+    def _atomic_write(self, target_path: str, writer) -> None:
+        self._ensure_dir(target_path)
+        tmp_path = f"{target_path}.tmp"
         try:
-            with open(paths_file, "w") as f:
-                json.dump(self.paths, f)
+            writer(tmp_path)
+            os.replace(tmp_path, target_path)
         except Exception as exc:
-            logger.warning("Failed to persist paths (%s): %s", paths_file, exc)
+            logger.warning("Failed atomic write (%s): %s", target_path, exc)
+            if os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+
+    def _atomic_json_dump(self, target_path: str, data) -> None:
+        def _write(path: str) -> None:
+            with open(path, "w") as f:
+                json.dump(data, f)
+
+        self._atomic_write(target_path, _write)
+
+    def _atomic_array_save(self, target_path: str, array: np.ndarray) -> None:
+        def _write(path: str) -> None:
+            np.save(path, array)
+
+        self._atomic_write(target_path, _write)
+
+    def _atomic_index_save(self) -> None:
+        temp_path = f"{self.index_path}.tmp"
+        self._ensure_dir(self.index_path)
+        try:
+            faiss.write_index(self.index, temp_path)
+            os.replace(temp_path, self.index_path)
+        except Exception as exc:
+            logger.warning("Failed to write index (%s): %s", self.index_path, exc)
+            if os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except OSError:
+                    pass
 
     def _append_vectors(self, vectors: np.ndarray):
         if vectors is None or vectors.size == 0 or not self.vector_path:
@@ -87,10 +129,7 @@ class VectorStorage:
     def _save_vectors(self):
         if self.vector_path is None or self.vector_matrix is None:
             return
-        try:
-            np.save(self.vector_path, self.vector_matrix)
-        except Exception as exc:
-            logger.warning("Failed to save vectors (%s): %s", self.vector_path, exc)
+        self._atomic_array_save(self.vector_path, self.vector_matrix)
 
     def add(self, vectors: np.ndarray, new_paths: list):
         if vectors.size == 0:
@@ -112,10 +151,7 @@ class VectorStorage:
         return results
 
     def save(self):
-        try:
-            faiss.write_index(self.index, self.index_path)
-        except Exception as exc:
-            logger.warning("Failed to write index (%s): %s", self.index_path, exc)
+        self._atomic_index_save()
         self._save_paths()
         self._save_vectors()
 

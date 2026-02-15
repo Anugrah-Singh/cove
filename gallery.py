@@ -2,15 +2,16 @@ import os
 import json
 import webbrowser
 from http.server import HTTPServer, SimpleHTTPRequestHandler
-import threading
+
+from vision_config import CONFIG
 
 def generate_gallery():
     # 1. Load Data
-    if not os.path.exists("models/people_db.json"):
+    if not os.path.exists(CONFIG.people_db_path):
         print("❌ No database found.")
         return
 
-    with open("models/people_db.json", "r") as f:
+    with open(CONFIG.people_db_path, "r") as f:
         people = json.load(f)
 
     print(f"Loaded {len(people)} clusters from database.")

@@ -1,9 +1,13 @@
 import json
 import os
+from typing import Optional
+
+from vision_config import CONFIG
+
 
 class PersonManager:
-    def __init__(self, db_path="models/people_db.json"):
-        self.db_path = db_path
+    def __init__(self, db_path: Optional[str] = None):
+        self.db_path = db_path or CONFIG.people_db_path
         self.people = self.load_db()
 
     def load_db(self):
@@ -35,6 +39,7 @@ class PersonManager:
                 self.people[person_id]["photos"].append(valid_paths[i])
         
         # Save to disk
+        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         with open(self.db_path, 'w') as f:
             json.dump(self.people, f, indent=4)
         

@@ -1,50 +1,85 @@
 """
 Vision Archive AI - Main Entry Point
-Run this file to see available commands and get started.
+Run this file to show the CLI guidance and check component readiness.
 """
-import os
-import sys
+from __future__ import annotations
 
-def main():
+import argparse
+import os
+from typing import Iterable
+
+from vision_config import CONFIG
+
+
+def _print_section(title: str, lines: Iterable[str]) -> None:
+    print(title)
+    for line in lines:
+        print(line)
+    print()
+
+
+def show_commands() -> None:
     print("=" * 50)
     print("  👁️  VISION ARCHIVE AI")
     print("=" * 50)
     print()
-    print("Available Commands:")
-    print()
-    print("  SETUP:")
-    print("    python download_models.py      Download CLIP models (~500MB)")
-    print("    python prepare_lfw.py          Copy LFW dataset to test_images/")
-    print()
-    print("  PROCESSING:")
-    print("    python production_pipeline.py  Extract face embeddings (fast)")
-    print("    python tune_clustering.py      Cluster faces & tune parameters")
-    print("    python reindex_search.py       Build semantic search index")
-    print()
-    print("  INTERFACES:")
-    print("    streamlit run app.py           Launch Streamlit Web UI")
-    print("    python gallery.py              Generate & serve HTML gallery")
-    print("    python search_app.py           CLI text-to-image search")
-    print("    python server.py               Start FastAPI server")
-    print()
-    print("  UTILITIES:")
-    print("    python rename_person.py ID Name  Rename a person in DB")
-    print("    python watcher.py [dir]        Watch folder for new images")
-    print("    python align_database.py       Repair vector database")
-    print()
-    
-    # Quick status check
+
+    _print_section("SETUP:", [
+        "    python download_models.py      Download CLIP models (~500MB)",
+        "    python prepare_lfw.py          Copy LFW dataset to test_images/",
+    ])
+
+    _print_section("PROCESSING:", [
+        "    python production_pipeline.py  Extract face embeddings (fast)",
+        "    python tune_clustering.py      Cluster faces & tune parameters",
+        "    python reindex_search.py       Build semantic search index",
+    ])
+
+    _print_section("INTERFACES:", [
+        "    streamlit run app.py           Launch Streamlit Web UI",
+        "    python gallery.py              Generate & serve HTML gallery",
+        "    python search_app.py           CLI text-to-image search",
+        "    python server.py               Start FastAPI server",
+    ])
+
+    _print_section("UTILITIES:", [
+        "    python rename_person.py ID Name  Rename a person in DB",
+        "    python watcher.py [dir]        Watch folder for new images",
+        "    python align_database.py       Repair vector database",
+    ])
+
+
+def show_status() -> None:
+    face_models_dir = os.path.join(CONFIG.assets_dir, "buffalo_s")
+    face_model_ready = os.path.exists(os.path.join(face_models_dir, "det_500m.onnx"))
+    clip_ready = all(os.path.exists(os.path.join(CONFIG.assets_dir, f)) for f in [
+        "clip_image.onnx",
+        "clip_text.onnx",
+        "tokenizer.json",
+    ])
+    db_ready = os.path.exists(CONFIG.people_db_path)
+    search_index_ready = os.path.exists(CONFIG.search_index_path)
+
     print("-" * 50)
     print("System Status:")
-    models_ok = os.path.exists("models/buffalo_s/det_500m.onnx")
-    clip_ok = os.path.exists("models/clip_image.onnx")
-    db_ok = os.path.exists("models/people_db.json")
-    index_ok = os.path.exists("models/faiss_index.bin")
-    
-    print(f"  Face Models:   {'✅ Ready' if models_ok else '❌ Missing (run download_models.py)'}")
-    print(f"  CLIP Models:   {'✅ Ready' if clip_ok else '❌ Missing (run download_models.py)'}")
-    print(f"  People DB:     {'✅ Ready' if db_ok else '⚠️  Not built yet'}")
-    print(f"  Search Index:  {'✅ Ready' if index_ok else '⚠️  Not built yet'}")
+    print(f"  Face Models:   {'✅ Ready' if face_model_ready else '❌ Missing (run download_models.py)'}")
+    print(f"  CLIP Models:   {'✅ Ready' if clip_ready else '❌ Missing (run download_models.py)'}")
+    print(f"  People DB:     {'✅ Ready' if db_ready else '⚠️  Not built yet'}")
+    print(f"  Search Index:  {'✅ Ready' if search_index_ready else '⚠️  Not built yet'}")
+    print(f"  Vectors Cache: {'✅ Ready' if os.path.exists(CONFIG.vector_path) else '⚠️  Not built yet'}")
+    print(f"  User Data Dir: {CONFIG.user_data_dir}")
 
-if __name__ == "__main__":
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description='Vision Archive CLI entry point')
+    parser.add_argument('command', nargs='?', choices=['help', 'status'], default='help')
+    args = parser.parse_args()
+
+    if args.command == 'status':
+        show_status()
+    else:
+        show_commands()
+
+
+if __name__ == '__main__':
     main()

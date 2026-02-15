@@ -4,19 +4,23 @@ import os
 import time
 from cluster_engine import ClusterEngine
 from person_manager import PersonManager
+from vision_config import CONFIG
 
 def main():
     print("⚡ VISION ARCHIVE: INSTANT TUNER ⚡")
     
-    # 1. Load the "frozen" data
-    if not os.path.exists("models/embeddings.npy"):
-        print("❌ No checkpoint found. Run production_pipeline.py first.")
+    candidate_vectors = [CONFIG.embeddings_file, CONFIG.vector_path]
+    embeddings = None
+    for candidate in candidate_vectors:
+        if os.path.exists(candidate):
+            print(f"Loading face vectors from {candidate}...", end="")
+            embeddings = np.load(candidate)
+            break
+    if embeddings is None:
+        print("❌ No checkpoint found. Run production_pipeline.py with new images to build embeddings.")
         return
-
-    print("Loading face vectors from disk...", end="")
-    embeddings = np.load("models/embeddings.npy")
     
-    with open("models/paths.json", "r") as f:
+    with open(CONFIG.paths_file, "r") as f:
         paths = json.load(f)
     print(f" Done. ({len(embeddings)} faces)")
 
@@ -38,7 +42,7 @@ def main():
         start = time.time()
         
         # 2. Run Clustering instantly
-        clusterer = ClusterEngine(min_cluster_size=min_cluster_size, min_samples=None)
+        clusterer = ClusterEngine(min_cluster_size=min_cluster_size)
         labels = clusterer.fit_predict(embeddings)
 
         # 3. Analyze Results

@@ -15,10 +15,10 @@ class AIEngine:
         self.config = config
         self._lock = threading.Lock()
 
-        logger.info("Booting AI engine %s (providers=%s)", instance_id, self.config.providers)
+        logger.info("Booting AI engine %s (providers=%s, root=%s)", instance_id, self.config.providers, self.config.assets_base)
         self.app = FaceAnalysis(
             name="buffalo_s",
-            root=self.config.model_dir,
+            root=self.config.assets_base,
             allowed_modules=["detection", "recognition"],
             providers=self.config.providers,
         )
