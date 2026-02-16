@@ -1,26 +1,23 @@
 import faiss
 import numpy as np
 
-
 class ClusterEngine:
     def __init__(
         self,
         min_cluster_size: int = 3,
-        neighbor_k: int = 64,
-        similarity_threshold: float | None = None,
+        threshold: float = 0.55,  # 0.55 is a good starting point for Buffalo_S
     ):
-        """Faiss-powered graph clustering: deterministic, fast, and noise-aware."""
+        """
+        Greedy Clustering (First-Leader):
+        - Fast (O(N) with FAISS).
+        - Prevents "chaining" (merging different people via a blurry link).
+        - Threshold: 0.50 = Loose (merges more), 0.65 = Strict (splits duplicates).
+        """
         self.min_cluster_size = max(1, min_cluster_size)
-        self.neighbor_k = max(2, neighbor_k)
-        self.similarity_threshold = similarity_threshold
-
-    def _auto_threshold(self) -> float:
-        base = 0.62
-        bump = min(0.25, (self.min_cluster_size - 2) * 0.015)
-        return min(0.95, base + bump)
+        self.threshold = threshold
 
     def fit_predict(self, embeddings: np.ndarray) -> np.ndarray:
-        print(f"   [FAISS] Clustering {len(embeddings)} faces...")
+        print(f"   [Clustering] Processing {len(embeddings)} faces (Greedy, Thresh={self.threshold})...")
 
         if not isinstance(embeddings, np.ndarray):
             embeddings = np.array(embeddings)
@@ -28,53 +25,56 @@ class ClusterEngine:
         if embeddings.size == 0:
             return np.array([], dtype=int)
 
+        # 1. Normalize Vectors (Critical for Cosine Similarity)
         embeddings = embeddings.astype('float32')
-        norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
-        norms[norms == 0] = 1.0
-        embeddings = embeddings / norms
+        faiss.normalize_L2(embeddings)
 
-        dim = embeddings.shape[1]
-        index = faiss.IndexFlatIP(dim)
-        index.add(embeddings)
-
-        k = min(self.neighbor_k, len(embeddings))
-        distances, neighbors = index.search(embeddings, k)
-        threshold = self.similarity_threshold or self._auto_threshold()
-
+        # 2. Initialize State
         labels = np.full(len(embeddings), -1, dtype=int)
-        visited = np.zeros(len(embeddings), dtype=bool)
-        cluster_id = 0
-
-        for root in range(len(embeddings)):
-            if visited[root]:
+        
+        # Leaders index: Stores the "Centroid" face of every cluster found so far
+        dim = embeddings.shape[1]
+        leader_index = faiss.IndexFlatIP(dim)
+        
+        # 3. Greedy Loop
+        cluster_count = 0
+        
+        for i, vector in enumerate(embeddings):
+            vector = vector.reshape(1, -1)
+            
+            if leader_index.ntotal == 0:
+                # First face is always a new cluster
+                leader_index.add(vector)
+                labels[i] = cluster_count
+                cluster_count += 1
                 continue
+            
+            # Find the single best match among existing leaders
+            dists, idxs = leader_index.search(vector, 1)
+            best_score = dists[0][0]
+            best_cluster_id = idxs[0][0]
+            
+            if best_score >= self.threshold:
+                # Match found! Assign to that cluster
+                labels[i] = best_cluster_id
+            else:
+                # No match. Create new cluster.
+                leader_index.add(vector)
+                labels[i] = cluster_count
+                cluster_count += 1
 
-            component = []
-            stack = [root]
+        # 4. Filter Noise (Min Cluster Size)
+        unique, counts = np.unique(labels, return_counts=True)
+        valid_clusters = unique[counts >= self.min_cluster_size]
+        
+        # Mark small clusters as noise (-1)
+        final_labels = np.array([
+            lbl if lbl in valid_clusters else -1 
+            for lbl in labels
+        ])
 
-            while stack:
-                current = stack.pop()
-                if visited[current]:
-                    continue
-                visited[current] = True
-                component.append(current)
-
-                for neighbor_idx, sim in zip(neighbors[current], distances[current]):
-                    neighbor_idx = int(neighbor_idx)
-                    if neighbor_idx == current or neighbor_idx < 0:
-                        continue
-                    if visited[neighbor_idx]:
-                        continue
-                    if sim >= threshold:
-                        stack.append(neighbor_idx)
-
-            if len(component) >= self.min_cluster_size:
-                labels[component] = cluster_id
-                cluster_id += 1
-
-        noise = np.count_nonzero(labels == -1)
-        print(
-            f"   -> Found {cluster_id} clusters, {noise} noise faces (threshold={threshold:.2f})."
-        )
-
-        return labels
+        noise_count = np.count_nonzero(final_labels == -1)
+        valid_count = len(valid_clusters)
+        
+        print(f"   -> Found {valid_count} valid clusters, {noise_count} noise faces.")
+        return final_labels
