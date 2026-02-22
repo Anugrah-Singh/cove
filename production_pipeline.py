@@ -20,39 +20,40 @@ PATHS_FILE = CONFIG.paths_file
 
 
 def scan_worker(worker_id, file_queue, result_list, lock, pool, progress=None, progress_lock=None):
-    with pool.borrow() as engine:
-        logger.info("Worker %s locked engine", worker_id)
-        while True:
-            try:
-                path = file_queue.get_nowait()
-            except queue.Empty:
-                break
+    while True:
+        try:
+            path = file_queue.get_nowait()
+        except queue.Empty:
+            break
 
-            try:
-                img = cv2.imread(path)
-                if img is None:
-                    logger.warning("%s: Unable to read image", path)
-                    continue
+        try:
+            img = cv2.imread(path)
+            if img is None:
+                logger.warning("%s: Unable to read image", path)
+                continue
 
+            # Borrow engine only when needed for inference
+            with pool.borrow() as engine:
                 faces = engine.get_faces(img)
-                if not faces:
-                    continue
+                
+            if not faces:
+                continue
 
-                faces.sort(
-                    key=lambda x: (x.bbox[2] - x.bbox[0]) * (x.bbox[3] - x.bbox[1]),
-                    reverse=True,
-                )
+            faces.sort(
+                key=lambda x: (x.bbox[2] - x.bbox[0]) * (x.bbox[3] - x.bbox[1]),
+                reverse=True,
+            )
 
-                with lock:
-                    result_list.append((path, faces[0].embedding))
+            with lock:
+                result_list.append((path, faces[0].embedding))
 
-            except Exception as exc:
-                logger.exception("Worker %s failed to process %s: %s", worker_id, path, exc)
-            finally:
-                file_queue.task_done()
-                if progress is not None and progress_lock is not None:
-                    with progress_lock:
-                        progress.update(1)
+        except Exception as exc:
+            logger.exception("Worker %s failed to process %s: %s", worker_id, path, exc)
+        finally:
+            file_queue.task_done()
+            if progress is not None and progress_lock is not None:
+                with progress_lock:
+                    progress.update(1)
 
 
 def main():
@@ -96,7 +97,7 @@ def main():
     progress = tqdm(total=len(new_files), desc="Processing images", unit="img")
     progress_lock = threading.Lock()
 
-    for worker_id in range(pool.pool_size):
+    for worker_id in range(CONFIG.effective_workers):
         thread = threading.Thread(
             target=scan_worker,
             args=(worker_id, file_queue, results, lock, pool, progress, progress_lock),
@@ -122,7 +123,8 @@ def main():
     progress.close()
 
     if results:
-        storage = VectorStorage(index_path=CONFIG.faiss_index_path)
+        # Fix: Save to embeddings.npy (Face Embeddings) instead of image_vectors.npy
+        storage = VectorStorage(index_path=CONFIG.faiss_index_path, vector_path=CONFIG.embeddings_file)
         paths, embeddings = zip(*results)
         vectors = np.array(embeddings, dtype="float32")
         storage.add(vectors, list(paths))

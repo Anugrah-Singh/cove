@@ -30,7 +30,8 @@ def load_search_engine():
 
 @st.cache_resource
 def load_data():
-    storage = VectorStorage(index_path=CONFIG.faiss_index_path)  # Face embeddings
+    # Fix: Explicitly load face embeddings for the face storage
+    storage = VectorStorage(index_path=CONFIG.faiss_index_path, vector_path=CONFIG.embeddings_file)  # Face embeddings
     search_storage = VectorStorage(index_path=CONFIG.search_index_path, vector_path=CONFIG.vector_path)  # CLIP semantic search
     pm = PersonManager()
     return storage, search_storage, pm

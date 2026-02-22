@@ -2,6 +2,8 @@ import os
 import numpy as np
 import json
 import time
+import concurrent.futures
+from tqdm import tqdm
 from search_engine import SearchEngine
 from vector_storage import VectorStorage
 from vision_config import CONFIG
@@ -24,27 +26,51 @@ def main():
     
     # 3. Build a SEPARATE FAISS index for CLIP semantic search
     #    This is distinct from faiss_index.bin which holds face embeddings.
+    if os.path.exists(CONFIG.search_index_path):
+        print(f"   Note: Overwriting existing search index at {CONFIG.search_index_path}")
+        # Delete old index to prevent duplication during re-indexing
+        try:
+            os.remove(CONFIG.search_index_path)
+            os.remove(f"{CONFIG.search_index_path}.paths")
+            if os.path.exists(CONFIG.vector_path):
+                 os.remove(CONFIG.vector_path)
+        except OSError:
+            pass
+
     search_storage = VectorStorage(index_path=CONFIG.search_index_path, vector_path=CONFIG.vector_path)
     
     clip_vectors = []
     valid_paths = []
     
-    start = time.time()
+    print("   Starting multi-threaded indexing for max GPU usage...")
     
-    for i, path in enumerate(paths):
+    # Helper function for parallel execution
+    def process_image(path):
         try:
-            embedding = searcher.get_image_embedding(path)
-            
-            if embedding is not None:
-                clip_vectors.append(embedding)
-                valid_paths.append(path)
-                
-        except Exception as e:
-            print(f"Skipping {path}: {e}")
-            
-        if i % 50 == 0:
-            speed = (i + 1) / (time.time() - start)
-            print(f"   Indexed {i}/{len(paths)} | Speed: {speed:.1f} img/sec", end='\r')
+            # This handles file read + preprocessing + GPU inference
+            # The GPU inference is thread-safe in ONNXRuntime
+            emb = searcher.get_image_embedding(path)
+            if emb is not None:
+                return (path, emb)
+        except Exception:
+            pass
+        return None
+
+    # Use more workers because CLIP preprocessing (loading/resizing) is CPU bound
+    # and we want to keep the GPU queue full.
+    max_workers = CONFIG.effective_workers
+    
+    # Using ThreadPoolExecutor
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all tasks
+        futures = {executor.submit(process_image, p): p for p in paths}
+        
+        # Process as they complete
+        for future in tqdm(concurrent.futures.as_completed(futures), total=len(paths), unit="img"):
+            result = future.result()
+            if result:
+                valid_paths.append(result[0])
+                clip_vectors.append(result[1])
 
     print(f"\n✅ Re-indexing Complete! ({len(clip_vectors)} valid images)")
     

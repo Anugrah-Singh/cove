@@ -22,8 +22,18 @@ class SearchEngine:
 
         logger.info("Loading CLIP models from %s", self.model_dir)
         try:
-            self.img_session = ort.InferenceSession(image_model, providers=self.providers)
-            self.txt_session = ort.InferenceSession(text_model, providers=self.providers)
+            # Apply GPU specific options to maximize throughput
+            sess_options = ort.SessionOptions()
+            if self.config.use_gpu:
+                # Allow ONNX to use more threads internally even on GPU to speed up data transfer
+                sess_options.intra_op_num_threads = 4
+                sess_options.inter_op_num_threads = 4
+            else:
+                import multiprocessing
+                sess_options.intra_op_num_threads = multiprocessing.cpu_count()
+                
+            self.img_session = ort.InferenceSession(image_model, sess_options=sess_options, providers=self.providers)
+            self.txt_session = ort.InferenceSession(text_model, sess_options=sess_options, providers=self.providers)
             self.tokenizer = Tokenizer.from_file(tokenizer_path)
         except Exception as exc:
             logger.exception("Failed to load CLIP models: %s", exc)

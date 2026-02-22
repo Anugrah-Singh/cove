@@ -2,7 +2,25 @@ import logging
 import os
 import platform
 import sys
+import glob
+import ctypes
 from typing import Optional, Tuple
+
+# Pre-load NVIDIA CUDA libraries if installed via pip (fixes ONNXRuntime CUDA 12 issues on Linux)
+if platform.system() == "Linux":
+    try:
+        for path_dir in sys.path:
+            if not os.path.isdir(path_dir):
+                continue
+            nvidia_lib_dirs = glob.glob(os.path.join(path_dir, "nvidia", "*", "lib"))
+            for lib_dir in nvidia_lib_dirs:
+                for so_file in glob.glob(os.path.join(lib_dir, "*.so.*")):
+                    try:
+                        ctypes.CDLL(so_file)
+                    except Exception:
+                        pass
+    except Exception:
+        pass
 
 try:
     import onnxruntime
@@ -163,7 +181,7 @@ class VisionConfig:
             opts.update({
                 "device_id": 0,
                 "gpu_mem_limit": 4 * 1024 * 1024 * 1024,
-                "cudnn_conv_algo_search": "HEURISTIC",
+                "cudnn_conv_algo_search": "EXHAUSTIVE", # Changed from HEURISTIC to EXHAUSTIVE for better performance
             })
         return opts
 
@@ -171,7 +189,30 @@ class VisionConfig:
     def effective_workers(self) -> int:
         if self.ai_workers is not None:
             return max(1, self.ai_workers)
-        return 2 if self.use_gpu else 1
+        # Dynamically scale workers based on CPU cores to maximize hardware utilization
+        import multiprocessing
+        cpu_count = multiprocessing.cpu_count()
+        if self.use_gpu:
+            # If GPU is present, we want enough CPU threads to keep the GPU fed with data.
+            # To hit 95%+ GPU utilization, we need to aggressively push data.
+            # We use 2x the number of CPU cores (up to 32) to ensure the GPU never waits for I/O.
+            return min(32, cpu_count * 2)
+        else:
+            # If CPU only, we want to use exactly all cores for inference to hit 100% CPU.
+            return cpu_count
+
+    @property
+    def ai_engine_pool_size(self) -> int:
+        # Number of actual ONNX model replicas to load into memory.
+        # For GPU, loading too many replicas will cause OOM (Out of Memory) or hangs.
+        # 1-2 replicas is usually enough to saturate a consumer GPU since batching/concurrency
+        # is handled efficiently, while I/O threads (effective_workers) can be much higher.
+        if self.use_gpu:
+            return 4 # Increased from 2 to 4 to push GPU utilization higher
+        else:
+            # For CPU, we can have more replicas, but still bounded by RAM.
+            import multiprocessing
+            return min(4, multiprocessing.cpu_count())
 
 
 CONFIG = VisionConfig()

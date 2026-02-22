@@ -28,6 +28,15 @@ class VectorStorage:
         else:
             self.index = faiss.IndexFlatIP(self.dimension)
 
+        # OPTIONAL: Move to GPU if available and supported
+        try:
+            if hasattr(faiss, 'get_num_gpus') and faiss.get_num_gpus() > 0:
+                # Convert to GPU index
+                res = faiss.StandardGpuResources()
+                self.index = faiss.index_cpu_to_gpu(res, 0, self.index)
+        except Exception:
+            pass  # Fallback to CPU silently if GPU fails
+
         self._load_paths()
         self._load_vectors()
         self._reindex_paths()
@@ -100,15 +109,24 @@ class VectorStorage:
 
     def _atomic_array_save(self, target_path: str, array: np.ndarray) -> None:
         def _write(path: str) -> None:
-            np.save(path, array)
+            with open(path, "wb") as f:
+                np.save(f, array)
 
         self._atomic_write(target_path, _write)
 
     def _atomic_index_save(self) -> None:
+        idx_to_save = self.index
+        # If GPU index, convert back to CPU before saving
+        try:
+            if hasattr(faiss, 'index_gpu_to_cpu'):
+                idx_to_save = faiss.index_gpu_to_cpu(self.index)
+        except Exception:
+            pass
+
         temp_path = f"{self.index_path}.tmp"
         self._ensure_dir(self.index_path)
         try:
-            faiss.write_index(self.index, temp_path)
+            faiss.write_index(idx_to_save, temp_path)
             os.replace(temp_path, self.index_path)
         except Exception as exc:
             logger.warning("Failed to write index (%s): %s", self.index_path, exc)
@@ -134,6 +152,7 @@ class VectorStorage:
     def add(self, vectors: np.ndarray, new_paths: list):
         if vectors.size == 0:
             return
+        vectors = np.array(vectors, dtype="float32")
         faiss.normalize_L2(vectors)
         self.index.add(vectors)
         self.paths.extend(new_paths)

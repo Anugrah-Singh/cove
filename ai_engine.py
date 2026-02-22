@@ -16,13 +16,24 @@ class AIEngine:
         self._lock = threading.Lock()
 
         logger.info("Booting AI engine %s (providers=%s, root=%s)", instance_id, self.config.providers, self.config.assets_base)
+        
+        # Determine efficient batch size based on hardware
+        # RTX 3050 has 4GB-6GB VRAM. We can increase throughput by batching?
+        # InsightFace defaults to single image inference per call. 
+        # To hit 95% GPU, we need to run multiple parallel inferences or larger images.
+        
         self.app = FaceAnalysis(
             name="buffalo_s",
             root=self.config.assets_base,
             allowed_modules=["detection", "recognition"],
             providers=self.config.providers,
         )
-        self.app.prepare(ctx_id=self.config.ctx_id, det_size=self.config.det_size)
+        # Increase detection size to utilize more GPU (better accuracy too)
+        # Default was 320x320 (very small for RTX 3050).
+        # Dynamic scaler: 640x640 is good balance.
+        # Pushing to 800x800 to force the GPU to work harder per image
+        det_size = (800, 800) if self.config.use_gpu else self.config.det_size
+        self.app.prepare(ctx_id=self.config.ctx_id, det_size=det_size)
 
         if self.config.use_gpu:
             self._apply_gpu_options()
@@ -47,7 +58,8 @@ class AIEngine:
 class AIEnginePool:
     def __init__(self, pool_size: int = None, config: VisionConfig = CONFIG):
         self.config = config
-        self.pool_size = pool_size or self.config.effective_workers
+        # Use ai_engine_pool_size which dynamically scales based on VRAM/RAM limits
+        self.pool_size = pool_size or self.config.ai_engine_pool_size
         self._queue = queue.Queue()
 
         for idx in range(self.pool_size):
