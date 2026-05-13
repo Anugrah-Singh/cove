@@ -40,8 +40,7 @@ searcher = load_search_engine()
 storage, search_storage, pm = load_data()
 
 if not pm.people:
-    st.error("❌ Person Database missing! Run 'python tune_clustering.py' first.")
-    st.stop()
+    st.warning("Person Database is empty. Load or cluster images to enable the person-specific views.")
 
 if search_storage.vector_matrix is None:
     st.warning(f"Semantic index missing vector cache. Run 'python reindex_search.py' to populate {CONFIG.vector_path}")
@@ -109,8 +108,12 @@ elif mode == "Detective Mode":
             count = len(data['photos'])
             if count > 2: 
                 person_options.append(f"{data['name']} ({pid}) - {count} photos")
-        
-        selected_person = st.selectbox("1. Select Person:", options=person_options)
+
+        if person_options:
+            selected_person = st.selectbox("1. Select Person:", options=person_options)
+        else:
+            st.info("No clustered people are available yet.")
+            selected_person = None
 
     with col2:
         # 2. Enter Concept

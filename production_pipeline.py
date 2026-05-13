@@ -9,6 +9,7 @@ import numpy as np
 from tqdm import tqdm
 
 from ai_engine import AIEnginePool
+from prepare_lfw import ensure_test_images
 from vector_storage import VectorStorage
 from vision_config import CONFIG, get_logger, setup_logging
 
@@ -17,6 +18,13 @@ logger = get_logger(__name__)
 
 IMG_FOLDER = "test_images"
 PATHS_FILE = CONFIG.paths_file
+
+
+def _has_images(folder: str) -> bool:
+    return os.path.isdir(folder) and any(
+        file_name.lower().endswith((".jpg", ".jpeg", ".png"))
+        for file_name in os.listdir(folder)
+    )
 
 
 def scan_worker(worker_id, file_queue, result_list, lock, pool, progress=None, progress_lock=None):
@@ -59,7 +67,14 @@ def scan_worker(worker_id, file_queue, result_list, lock, pool, progress=None, p
 def main():
     logger.info("🚀 Vision Archive: Auto-scaling pipeline")
 
-    if not os.path.isdir(IMG_FOLDER):
+    if not _has_images(IMG_FOLDER):
+        logger.info("Image folder missing or empty (%s); preparing test images.", IMG_FOLDER)
+        prepared_count = ensure_test_images(dest_dir=IMG_FOLDER)
+        if prepared_count == 0:
+            logger.error("No images available in %s", IMG_FOLDER)
+            return
+
+    if not _has_images(IMG_FOLDER):
         logger.error("Missing image folder (%s)", IMG_FOLDER)
         return
 
